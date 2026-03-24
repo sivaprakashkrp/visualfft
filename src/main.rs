@@ -1,11 +1,10 @@
 use clap::Parser;
 use csv::ReaderBuilder;
 use eframe::egui::{
-    self, CentralPanel, Color32, ComboBox, Context, FontFamily, FontId, Grid, ScrollArea,
-    TextStyle,
+    self, CentralPanel, Color32, ComboBox, Context, FontFamily, FontId, Grid, TextStyle,
     TopBottomPanel, Ui,
 };
-use egui_plot::{Legend, Line, Plot};
+use egui_plot::{Legend, Line, MarkerShape, Plot, Points};
 use rustfft::{FftPlanner, num_complex::Complex32};
 use serde::Deserialize;
 use std::error::Error;
@@ -107,9 +106,10 @@ struct App {
     direction: TransformDirection,
     status_message: String,
     fft_result: Option<FftResult>,
+    focused_plot_id: Option<String>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct FftResult {
     time_division: f64,
     frequency_division: f64,
@@ -121,16 +121,18 @@ struct FftResult {
     phase_points: Vec<[f64; 2]>,
 }
 
+#[derive(Clone, Copy)]
+enum PlotRenderStyle {
+    Line,
+    StemArrow,
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         set_styles(ctx);
         show_top_bar(ctx);
         CentralPanel::default().show(ctx, |ui| {
-            ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    self.show_expr_input(ui);
-                });
+            self.show_expr_input(ui);
         });
     }
 }
@@ -144,6 +146,7 @@ impl App {
             direction: TransformDirection::Forward,
             status_message: "Enter data and click Apply FFT.".to_string(),
             fft_result: None,
+            focused_plot_id: None,
         }
     }
 
@@ -209,7 +212,7 @@ impl App {
                 ui.colored_label(Color32::LIGHT_BLUE, &self.status_message);
             });
 
-            if let Some(result) = &self.fft_result {
+            if let Some(result) = self.fft_result.clone() {
                 ui.separator();
                 ui.heading("Output");
                 ui.label(format!(
@@ -218,7 +221,12 @@ impl App {
                 ));
                 ui.add_space(4.0);
 
-                self.draw_responsive_plots(ui, result);
+                let plot_area_size = ui.available_size();
+                if plot_area_size.y > 0.0 {
+                    ui.allocate_ui(plot_area_size, |plot_ui| {
+                        self.draw_responsive_plots(plot_ui, &result);
+                    });
+                }
             }
         });
     }
@@ -281,22 +289,26 @@ impl App {
         self.sampling_frequency_input.clear();
         self.direction = TransformDirection::Forward;
         self.fft_result = None;
+        self.focused_plot_id = None;
         self.status_message = "Inputs and plots cleared.".to_string();
     }
 
-    fn draw_responsive_plots(&self, ui: &mut Ui, result: &FftResult) {
-        let mut plot_specs: Vec<(String, String, Color32, &[[f64; 2]])> = Vec::new();
+    fn draw_responsive_plots(&mut self, ui: &mut Ui, result: &FftResult) {
+        let mut plot_specs: Vec<(String, String, Color32, PlotRenderStyle, &[[f64; 2]])> =
+            Vec::new();
 
         plot_specs.push((
             "Input Real Component".to_string(),
             "input_real".to_string(),
             Color32::LIGHT_BLUE,
+            PlotRenderStyle::Line,
             &result.input_real_points,
         ));
         plot_specs.push((
             "Input Imag Component".to_string(),
             "input_imag".to_string(),
             Color32::from_rgb(0x9A, 0xE6, 0xB4),
+            PlotRenderStyle::Line,
             &result.input_imag_points,
         ));
 
@@ -304,24 +316,28 @@ impl App {
             "FFT Real Component".to_string(),
             "fft_real".to_string(),
             Color32::LIGHT_GREEN,
+            PlotRenderStyle::Line,
             &result.real_points,
         ));
         plot_specs.push((
             "FFT Imaginary Component".to_string(),
             "fft_imag".to_string(),
             Color32::LIGHT_RED,
+            PlotRenderStyle::Line,
             &result.imag_points,
         ));
         plot_specs.push((
             "FFT Magnitude".to_string(),
             "fft_magnitude".to_string(),
             Color32::LIGHT_YELLOW,
+            PlotRenderStyle::StemArrow,
             &result.magnitude_points,
         ));
         plot_specs.push((
             "FFT Phase (radians)".to_string(),
             "fft_phase".to_string(),
             Color32::KHAKI,
+            PlotRenderStyle::StemArrow,
             &result.phase_points,
         ));
 
@@ -333,19 +349,74 @@ impl App {
             1
         };
 
+        if let Some(focused_id) = &self.focused_plot_id {
+            let focused_spec = plot_specs
+                .iter()
+                .find(|(_, id, _, _, _)| id == focused_id)
+                .map(|(title, id, color, style, points)| {
+                    (title.clone(), id.clone(), *color, *style, *points)
+                });
+
+            if let Some((title, id, color, style, points)) = focused_spec {
+                ui.horizontal(|ui| {
+                    ui.strong(format!("Focused: {title}"));
+                    if ui.button("Back to all graphs").clicked() {
+                        self.focused_plot_id = None;
+                    }
+                });
+                ui.add_space(4.0);
+
+                let focused_plot_height = ui.available_height().max(220.0);
+                if Self::draw_component_plot(
+                    ui,
+                    &title,
+                    &id,
+                    points,
+                    color,
+                    style,
+                    focused_plot_height,
+                ) {
+                    self.focused_plot_id = None;
+                }
+
+                return;
+            }
+
+            self.focused_plot_id = None;
+        }
+
+        let total_rows = (plot_specs.len() + columns - 1) / columns;
+        let row_spacing = 8.0;
+        let available_height = ui.available_height();
+        let total_spacing = row_spacing * (total_rows.saturating_sub(1) as f32);
+        let per_plot_height = ((available_height - total_spacing) / total_rows as f32).max(140.0);
+        let mut requested_focus_id: Option<String> = None;
+
         for row in plot_specs.chunks(columns) {
             ui.columns(columns, |column_uis| {
-                for (column_index, (title, id, color, points)) in row.iter().enumerate() {
-                    Self::draw_component_plot(
+                for (column_index, (title, id, color, render_style, points)) in
+                    row.iter().enumerate()
+                {
+                    let was_double_tapped = Self::draw_component_plot(
                         &mut column_uis[column_index],
                         title,
                         id,
                         points,
                         *color,
+                        *render_style,
+                        per_plot_height,
                     );
+
+                    if was_double_tapped {
+                        requested_focus_id = Some(id.clone());
+                    }
                 }
             });
             ui.add_space(8.0);
+        }
+
+        if let Some(id) = requested_focus_id {
+            self.focused_plot_id = Some(id);
         }
     }
 
@@ -355,15 +426,48 @@ impl App {
         id: &str,
         points: &[[f64; 2]],
         color: Color32,
-    ) {
-        let line = Line::new(title, points.to_vec()).color(color);
-
-        Plot::new(id)
-            .height(180.0)
+        render_style: PlotRenderStyle,
+        plot_height: f32,
+    ) -> bool {
+        let plot_response = Plot::new(id)
+            .height(plot_height)
             .legend(Legend::default())
             .show(ui, |plot_ui| {
-                plot_ui.line(line);
+                match render_style {
+                    PlotRenderStyle::Line => {
+                        let line = Line::new(title, points.to_vec()).color(color);
+                        plot_ui.line(line);
+                    }
+                    PlotRenderStyle::StemArrow => {
+                        let mut peaks = Vec::with_capacity(points.len());
+
+                        for point in points {
+                            peaks.push(*point);
+                        }
+                        let arrow_points = Points::new(format!("{title} Arrow"), peaks)
+                            .shape(MarkerShape::Up)
+                            .radius(6.0)
+                            .color(color);
+
+                        for (index, point) in points.iter().enumerate() {
+                            let stack_name = if index == 0 {
+                                format!("{title} Stacks")
+                            } else {
+                                String::new()
+                            };
+
+                            let stack = Line::new(stack_name, vec![[point[0], 0.0], *point])
+                                .color(color)
+                                .width(2.0);
+                            plot_ui.line(stack);
+                        }
+
+                        plot_ui.points(arrow_points);
+                    }
+                }
             });
+
+        plot_response.response.double_clicked()
     }
 }
 
