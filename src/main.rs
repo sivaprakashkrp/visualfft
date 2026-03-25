@@ -11,7 +11,14 @@ use std::error::Error;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "visualfft", version, about = "VisualFFT GUI + CLI")]
+#[command(
+    version,
+    author,
+    about = "A simple FFT visualization tool built with Rust and egui.",
+    long_about = "A GUI Tool that can solve and visualize the results of Fast Fourier Transform (FFT) for a given input sequence. Also supports a CLI mode to process CSV files with FFT configurations and output results in the GUI.",
+    help_template = "{bin} {version}\nDeveloped By: {author}\n\n{about}\n\nUsage:\n\t{usage}\n\n{all-args}",
+    author = "Sivaprakash P"
+)]
 struct CliArgs {
     #[arg(
         short = 'c',
