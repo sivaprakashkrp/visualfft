@@ -9,6 +9,7 @@ use rustfft::{FftPlanner, num_complex::Complex32};
 use serde::Deserialize;
 use std::error::Error;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -497,10 +498,40 @@ fn main() {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_resizable(true)
-            .with_inner_size([720.0, 480.0]),
+            .with_inner_size([720.0, 480.0])
+            .with_icon(
+                load_logo_icon().unwrap_or_else(|| Arc::new(default_icon_data())),
+            ),
         ..Default::default()
     };
     let _ = eframe::run_native("VisualFFT", options, Box::new(|_cc| Ok(Box::new(App::new()))));
+}
+
+fn load_logo_icon() -> Option<Arc<egui::IconData>> {
+    let svg = include_str!("../images/logo.svg");
+    let options = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_str(svg, &options).ok()?;
+    let size = tree.size().to_int_size();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
+
+    Some(Arc::new(egui::IconData {
+        rgba: pixmap.data().to_vec(),
+        width: size.width(),
+        height: size.height(),
+    }))
+}
+
+fn default_icon_data() -> egui::IconData {
+    egui::IconData {
+        rgba: vec![0, 0, 0, 0],
+        width: 1,
+        height: 1,
+    }
 }
 
 fn run_cli(
