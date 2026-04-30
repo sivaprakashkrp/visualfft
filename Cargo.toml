@@ -2,6 +2,14 @@
 name = "visualfft"
 version = "0.1.0"
 edition = "2024"
+authors = ["Sivaprakash P"]
+repository = "https://github.com/sivaprakashkrp/visualfft"
+license = "GPL-2.0-or-later"
+description = "A GUI application that can visualize FFT results"
+readme = "README.md"
+homepage = "https://github.com/sivaprakashkrp/visualfft"
+keywords = ["fft", "gui"]
+categories = ["command-line-utilities", "gui", "visualization"]
 
 [dependencies]
 clap = { version = "4.5.37", features = ["derive"] }
@@ -11,3 +19,10 @@ egui_plot = "0.34.0"
 resvg = "0.45.1"
 rustfft = "6.4.1"
 serde = { version = "1.0.219", features = ["derive"] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+opt-level = "z"

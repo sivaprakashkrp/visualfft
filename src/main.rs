@@ -1,7 +1,8 @@
 use clap::Parser;
 use csv::ReaderBuilder;
 use eframe::egui::{
-    self, CentralPanel, Color32, ComboBox, Context, FontFamily, FontId, Grid, TextStyle,
+    self, CentralPanel, Color32, ComboBox, Context, FontFamily, FontId, Grid, ScrollArea,
+    TextStyle,
     TopBottomPanel, Ui,
 };
 use egui_plot::{Legend, Line, MarkerShape, Plot, Points};
@@ -16,7 +17,7 @@ use std::sync::Arc;
     version,
     author,
     about = "A simple FFT visualization tool built with Rust and egui.",
-    long_about = "A GUI Tool that can solve and visualize the results of Fast Fourier Transform (FFT) for a given input sequence. Also supports a CLI mode to process CSV files with FFT configurations and output results in the GUI.",
+    long_about = "A GUI Tool that can solve and visualize the results of Fast Fourier Transform (FFT) for a given input sequence. Also supports a CLI mode to process CSV files with FFT configurations and output results in the GUI.\n\nFor Bug reports, please open issues at https://github.com/sivaprakashkrp/visualfft.",
     help_template = "{bin} {version}\nDeveloped By: {author}\n\n{about}\n\nUsage:\n\t{usage}\n\n{all-args}",
     author = "Sivaprakash P"
 )]
@@ -115,6 +116,7 @@ struct App {
     status_message: String,
     fft_result: Option<FftResult>,
     focused_plot_id: Option<String>,
+    about_open: bool,
 }
 
 #[derive(Default, Clone)]
@@ -138,9 +140,15 @@ enum PlotRenderStyle {
 impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         set_styles(ctx);
-        show_top_bar(ctx);
+        show_top_bar(ctx, &mut self.about_open);
+        self.show_about_window(ctx);
         CentralPanel::default().show(ctx, |ui| {
-            self.show_expr_input(ui);
+            ScrollArea::vertical()
+                .id_salt("app_scroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    self.show_expr_input(ui);
+                });
         });
     }
 }
@@ -155,6 +163,7 @@ impl App {
             status_message: "Enter data and click Apply FFT.".to_string(),
             fft_result: None,
             focused_plot_id: None,
+            about_open: false,
         }
     }
 
@@ -229,12 +238,7 @@ impl App {
                 ));
                 ui.add_space(4.0);
 
-                let plot_area_size = ui.available_size();
-                if plot_area_size.y > 0.0 {
-                    ui.allocate_ui(plot_area_size, |plot_ui| {
-                        self.draw_responsive_plots(plot_ui, &result);
-                    });
-                }
+                self.draw_responsive_plots(ui, &result);
             }
         });
     }
@@ -299,6 +303,30 @@ impl App {
         self.fft_result = None;
         self.focused_plot_id = None;
         self.status_message = "Inputs and plots cleared.".to_string();
+    }
+
+    fn show_about_window(&mut self, ctx: &Context) {
+        egui::Window::new("About VisualFFT")
+            .resizable(false)
+            .collapsible(false)
+            .open(&mut self.about_open)
+            .show(ctx, |ui| {
+                ui.heading("VisualFFT");
+                ui.label("Version: 0.1.0");
+                ui.add_space(8.0);
+                ui.label("A simple FFT visualization tool built with Rust and egui.");
+                ui.add_space(12.0);
+                ui.label(
+                    "A GUI Tool that can solve and visualize the results of Fast Fourier Transform (FFT) \
+                    for a given input sequence. Also supports a CLI mode to process CSV files with FFT \
+                    configurations and output results in the GUI.",
+                );
+                ui.add_space(12.0);
+                ui.separator();
+                ui.label("Author: Sivaprakash P");
+                ui.label("License: GPL-2.0-or-later");
+                ui.label("Repository: github.com/sivaprakashkrp/visualfft");
+            });
     }
 
     fn draw_responsive_plots(&mut self, ui: &mut Ui, result: &FftResult) {
@@ -397,31 +425,39 @@ impl App {
         let row_spacing = 8.0;
         let available_height = ui.available_height();
         let total_spacing = row_spacing * (total_rows.saturating_sub(1) as f32);
-        let per_plot_height = ((available_height - total_spacing) / total_rows as f32).max(140.0);
+        let per_plot_height = if columns == 3 {
+            ((available_height - total_spacing) / total_rows as f32).max(140.0)
+        } else {
+            260.0
+        };
         let mut requested_focus_id: Option<String> = None;
 
-        for row in plot_specs.chunks(columns) {
-            ui.columns(columns, |column_uis| {
-                for (column_index, (title, id, color, render_style, points)) in
-                    row.iter().enumerate()
-                {
-                    let was_double_tapped = Self::draw_component_plot(
-                        &mut column_uis[column_index],
-                        title,
-                        id,
-                        points,
-                        *color,
-                        *render_style,
-                        per_plot_height,
-                    );
+        let render_grid = |ui: &mut Ui, requested_focus_id: &mut Option<String>| {
+            for row in plot_specs.chunks(columns) {
+                ui.columns(columns, |column_uis| {
+                    for (column_index, (title, id, color, render_style, points)) in
+                        row.iter().enumerate()
+                    {
+                        let was_double_tapped = Self::draw_component_plot(
+                            &mut column_uis[column_index],
+                            title,
+                            id,
+                            points,
+                            *color,
+                            *render_style,
+                            per_plot_height,
+                        );
 
-                    if was_double_tapped {
-                        requested_focus_id = Some(id.clone());
+                        if was_double_tapped {
+                            *requested_focus_id = Some(id.clone());
+                        }
                     }
-                }
-            });
-            ui.add_space(8.0);
-        }
+                });
+                ui.add_space(8.0);
+            }
+        };
+
+        render_grid(ui, &mut requested_focus_id);
 
         if let Some(id) = requested_focus_id {
             self.focused_plot_id = Some(id);
@@ -855,12 +891,12 @@ fn set_styles(ctx: &Context) {
     ctx.set_style(style);
 }
 
-fn show_top_bar(ctx: &Context) {
+fn show_top_bar(ctx: &Context, about_open: &mut bool) {
     TopBottomPanel::top("menu_bar").show(ctx, |ui| {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("About").clicked() {
-                    // todo!("Render About Dialog Box")
+                    *about_open = true;
                 }
                 if ui.button("Exit").clicked() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
