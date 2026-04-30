@@ -1,5 +1,7 @@
 # `visualfft`
 
+[![Crates.io](https://img.shields.io/crates/v/visualfft.svg)](https://crates.io/crates/visualfft)
+
 ![visualfft banner](/images/visualfft-banner.png)
 
 A GUI Tool that can solve and visualize the results of Fast Fourier Transform (FFT) for a given input sequence. Also supports a CLI mode to process CSV files with FFT configurations and output results in the GUI.
@@ -7,6 +9,25 @@ A GUI Tool that can solve and visualize the results of Fast Fourier Transform (F
 ![visualfft demo](/images/visualfft-demo.png)
 
 Written in `RUST` with `egui` for GUI.
+
+## Installation
+
+### From `cargo`
+
+You can now install `visualfft` from `cargo`, published in [crates.io](https://crates.io/crates/visualfft). The installtion command is
+```bash
+cargo install visualfft
+```
+
+### Windows Executable
+A **Windows** executable (`.exe`) file will be provided in the **Releases** section. **Windows** users can download it from there.
+
+### Build from source
+Clone the repository, `cd` into it and run
+```bash
+cargo build --release
+```
+The executable file will be created in `./target/release/` folder with the name `visualfft`.
 
 ## Usage:
 ```bash
@@ -49,3 +70,9 @@ Number of rows to preview. `[default: 12]`
 -h, --help
 ```
 Print help (see a summary with '-h')
+
+---
+
+For more information, please visit [crates.io](https://crates.io/crates/visualfft)
+
+For sharing bugs and isssues please use the GitHub Issues page of this repository.
